@@ -1,0 +1,96 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+L   = 1;              # length of filament [m]
+b   = 0.01;          # length of sides of filament, meters (it is a square)
+h_a = 5;             # convection coefficient between filament and air W/(m^2K)
+h_p = 100;            # convection coefficient between filament and plate W/(m^2K)
+h_f =5;           # convection coefficient between filament and filament W/(m^2K)
+n   = 1000;            # number of elements to simulate with
+b_s = L/n;            # the length of a singular element in meters
+A   = b*b;            # cross sectional area of an element
+V_f = A*b_s;          # volume of a singular filament element
+t_s = 0.1;            # seconds, how frequently to add another element
+cp  = 1600;           # joules per kilogram per kelvin
+T_e = 298.15;         # kelvin, standard air temp
+T_p = 313.15;         # kelvin, 40 celsius
+T_fe = 398.15;        # kelvin, 125 celsius when the filament is extruded
+# T_stop = 333.15        #Kelvin, stop condition
+T_diff_stop = 10
+rho = 1200;           # density of filament [kg/m^3]
+m   = rho * V_f;      # mass of one element [kg]
+
+####initialize
+
+TN = np.full(n,np.nan)
+# print(TM)
+n_active = 0
+his = [] #history to be updated at each step.
+cooling_steps = 0
+
+###for loop, first adding all components and then ending
+
+for i in range(n): #adding all components
+    TN[i] = T_fe #activates component i to T=  filament extruded
+    n_active = n_active + 1
+    TC = TN.copy() #saves array TC for calculating.
+    print('currently at', n_active)
+    for j in range(n_active):
+        if n_active == 1:   #edge case where only 1 active component
+            TN[j] = TC[j]+((2*(A)*(T_e-TC[j])*h_a+3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p))*t_s/(m*cp)
+        elif j == 0: # edge case first component
+            TN[j] = TC[j]+((A)*(T_e-TC[j])*h_a+3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p + (A)*(TC[j+1]-TC[j])*h_f)*t_s/(m*cp)
+        elif j == n_active -1: #edge case last component
+            TN[j] = TC[j]+((A)*(T_e-TC[j])*h_a+3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p + (A)*(-TC[j]+TC[j-1])*h_f)*t_s/(m*cp)
+        else: #rest of cases
+            TN[j] = TC[j]+(3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p +(A)*(-TC[j]+TC[j+1])*h_f +(A)*(-TC[j]+TC[j-1])*h_f)*t_s/(m*cp)
+    his.append(TN.copy()) #creating a history to graph.
+        
+####While loop, while stop condition not met.
+
+while np.max(TN) -np.min(TN)> T_diff_stop: #adding all components
+    cooling_steps = cooling_steps + 1
+    TC = TN.copy() #saves array TC for calculating.
+    print('Cooling step', cooling_steps)
+    for j in range(n):
+        if j == 0: # edge case first component, because it is a circle once all are added j = 0 and j = n touch
+            TN[j] = TC[j]+((A)*(TC[n-1]-TC[j])*h_f+3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p + (A)*(TC[j+1]-TC[j])*h_f)*t_s/(m*cp)
+        elif j == n -1: #edge case last component which touches first now bc circle
+            TN[j] = TC[j]+(3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p + (A)*(-TC[j]+TC[j-1])*h_f+(A)*(-TC[j]+TC[0])*h_f)*t_s/(m*cp)
+        else: #rest of cases
+            TN[j] = TC[j]+(3*(b_s*b)*(T_e-TC[j])*h_a + (b_s*b)*(T_p-TC[j])*h_p +(A)*(-TC[j]+TC[j+1])*h_f +(A)*(-TC[j]+TC[j-1])*h_f)*t_s/(m*cp)
+        
+    his.append(TN.copy()) #creating a history to graph.
+    
+
+T_matrix = np.array(his)
+T_matrix_c = T_matrix - 273.15
+time = np.arange(len(T_matrix)) * t_s
+
+plt.plot(time, T_matrix_c[:, 0], label='(j=0)')
+# plt.plot(time, T_matrix_c[:, 1], label='(j=01)')
+# plt.plot(time, T_matrix_c[:, 2], label='(j=02)')
+plt.plot(time, T_matrix_c[:, 99], label='(j=099)')
+plt.plot(time, T_matrix_c[:, 199], label='(j=199)')
+plt.plot(time, T_matrix_c[:, 299], label='(j=299)')
+plt.plot(time, T_matrix_c[:, 399], label='(j=399)')
+plt.plot(time, T_matrix_c[:, 499], label='(j=499)')
+plt.plot(time, T_matrix_c[:, 599], label='(j=599)')
+plt.plot(time, T_matrix_c[:, 699], label='(j=699)')
+plt.plot(time, T_matrix_c[:, 799], label='(j=799)')
+plt.plot(time, T_matrix_c[:, 899], label='(j=899)')
+# plt.plot(time, T_matrix_c[:, 94], label='(j=94)')
+plt.plot(time, T_matrix_c[:, 999], label='(j=999)')
+
+plt.axhline(T_p-273.15, color='r', linestyle='--', label='T_plate')
+plt.axhline(T_e-273.15, color='r', linestyle='--', label='T_air')
+plt.xlabel('Time [s]')
+plt.ylabel('Temperature [C]')
+plt.title('Filament Temperature Over Time')
+plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+plt.tight_layout()
+plt.grid(True)
+plt.show()
+
