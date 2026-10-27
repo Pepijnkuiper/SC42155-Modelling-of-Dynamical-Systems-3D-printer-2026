@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Oct 27 13:46:18 2026
+
+@author: pepij
+"""
+
+import numpy as np
+import control as ct
+
+rm = 0.1 #[m]
+mu_x = 0.5 
+mu_y = 0.5
+mu_r = 1
+J = 0.0001 #[ kg* m^2]
+Rm = 10 # [Ohm]
+L_m = 0.1  # [kg⋅m^2⋅s^−2⋅A^−2]
+Kr = 1 # [torque/A]
+m = 0.01 # [kg] 
+b1 = 2*mu_x + 8*mu_r #9
+b2 = 2*mu_y + 4*mu_r #5
+c = m * rm**2 + 2 * J
+Rn = 1#[Ohm] resistor of heater
+Cn = 1#[] capacitor of the resistor
+Ct_n = 1# heat capacitace of heater
+Rt_n = 1# heat resistance
+
+###state space
+
+A = np.array([
+    [0, 0, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0, 0, 0],
+    [0, 0, -0.5 * rm**2 * (b1 + b2) / c, -0.5 * rm**2 * (b1 - b2) / c, 2 * Kr / c, 0, 0, 0, 0],
+    [0, 0, -0.5 * rm**2 * (b1 - b2) / c, -0.5 * rm**2 * (b1 + b2) / c, 0, 2 * Kr / c, 0, 0, 0],
+    [0, 0, -Kr / L_m, 0, -Rm / L_m, 0, 0, 0, 0],
+    [0, 0, 0, -Kr / L_m, 0, -Rm / L_m, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, -1 / L_n, 0],
+    [0, 0, 0, 0, 0, 0, 1 / Cn, -1 / (Cn * Rn), 0],
+    [0, 0, 0, 0, 0, 0, 0, 1 / (Rn * Ct_n), -1 / (Ct_n * Rt_n)]
+], dtype=float)
+
+B = np.array([
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [1 / L_m, 0, 0, 0],
+    [0, 1 / L_m, 0, 0],
+    [0, 0, 1 / L_n, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, -1 / (Ct_n * Rt_n)]
+], dtype=float)
+
+C = np.eye(9)
+D = np.zeros((9, 4))
+
+
+###func to convert to x and y
+# def x_y(theta_L,theta_R):
+    # return (rm/2)*(theta_L+theta_R),
+
+###steering function
+
+k_h = 1 #horizontal gain
+k_v = 1 #vertical gain
+k_d = 1 #derivative gain
+
+
+def steering_input(x,move_to):
+    x_pos = (rm/2)*(x[0]+x[1])
+    y_pos = (rm/2)*(x[0]-x[1])
+    delta_x = move_to[0] - x_pos
+    delta_y = move_to[1] - y_pos
+
+    vx = (rm/2)*(x[3]+x[4])
+    vy = (rm/2)*(x[3]-x[4])
+    
+    U_L = k_h*delta_x + k_v*delta_y - k_d*vx - k_d*vy
+    U_R = k_h*delta_x + k_v*delta_y - k_d*vx + k_d*vy
+    return U_L,U_R
+
+###
+
+#initialize
+program = np.array([[2,1,0],[1,2,0],[1,1,1]])
+L_fc = 1.5 #how much filament we have now
+f_color = 0 #colour 0 is loaded
+L_nf = 1.5 #length of new filament that is loaded
+printing = 1
+allowed_error = 0.01 #meters when to switch to new target point
+
+
+for i in range(len(program)): #moves through all my steering inputs
+    target_point = (program[i,0],program[i,1])
+    if f_color == program[i,2]:
+        del_x = np.abs(target_point[0] - (rm/2)*(x[0]+x[1])) #distance to where it wants to be in x
+        del_y = np.abs(target_point[0] - (rm/2)*(x[0]-x[1])) #in y
+        while  del_x > allowed_error or  del_y > allowed_error:
+            
+    
+    
