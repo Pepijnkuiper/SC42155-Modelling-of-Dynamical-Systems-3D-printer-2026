@@ -1,29 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 27 13:46:18 2026
+Created on Tue Oct 27 17:13:16 2026
 
 @author: pepij
 """
 
 import numpy as np
 import control as ct
+import matplotlib.pyplot as plt
 
-rm = 0.1 #[m]
-mu_x = 0.5 
-mu_y = 0.5
-mu_r = 1
-J = 0.0001 #[ kg* m^2]
+#physical
+rm = 0.01 #[m]
+mu_x = 0.01 
+mu_y = 0.01
+mu_r = 0.01
+J = 0.00001 #[ kg* m^2]
 Rm = 10 # [Ohm]
-L_m = 0.1  # [kg⋅m^2⋅s^−2⋅A^−2]
-Kr = 1 # [torque/A]
-m = 0.01 # [kg] 
+L_m = 0.005  # [kg⋅m^2⋅s^−2⋅A^−2]
+Kr = 0.1 # [torque/A]
+m = 0.250 # [kg] 
 b1 = 2*mu_x + 8*mu_r #9
 b2 = 2*mu_y + 4*mu_r #5
 c = m * rm**2 + 2 * J
+
+
+#heater elements
+Ln = 0.00001#inductor of the heater
 Rn = 1#[Ohm] resistor of heater
-Cn = 1#[] capacitor of the resistor
-Ct_n = 1# heat capacitace of heater
-Rt_n = 1# heat resistance
+Cn = 0.000001#[] capacitor of the resistor
+Ct_n = 8# heat capacitace of heater
+Rt_n = 8# heat resistance
 
 ###state space
 
@@ -34,7 +40,7 @@ A = np.array([
     [0, 0, -0.5 * rm**2 * (b1 - b2) / c, -0.5 * rm**2 * (b1 + b2) / c, 0, 2 * Kr / c, 0, 0, 0],
     [0, 0, -Kr / L_m, 0, -Rm / L_m, 0, 0, 0, 0],
     [0, 0, 0, -Kr / L_m, 0, -Rm / L_m, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, -1 / L_n, 0],
+    [0, 0, 0, 0, 0, 0, 0, -1 / Ln, 0],
     [0, 0, 0, 0, 0, 0, 1 / Cn, -1 / (Cn * Rn), 0],
     [0, 0, 0, 0, 0, 0, 0, 1 / (Rn * Ct_n), -1 / (Ct_n * Rt_n)]
 ], dtype=float)
@@ -46,56 +52,205 @@ B = np.array([
     [0, 0, 0, 0],
     [1 / L_m, 0, 0, 0],
     [0, 1 / L_m, 0, 0],
-    [0, 0, 1 / L_n, 0],
+    [0, 0, 1 / Ln, 0],
     [0, 0, 0, 0],
-    [0, 0, 0, -1 / (Ct_n * Rt_n)]
+    [0, 0, 0, 1 / (Ct_n * Rt_n)]
 ], dtype=float)
 
 C = np.eye(9)
 D = np.zeros((9, 4))
 
-
-###func to convert to x and y
-# def x_y(theta_L,theta_R):
-    # return (rm/2)*(theta_L+theta_R),
-
-###steering function
-
-k_h = 1 #horizontal gain
-k_v = 1 #vertical gain
-k_d = 1 #derivative gain
-
-
-def steering_input(x,move_to):
-    x_pos = (rm/2)*(x[0]+x[1])
-    y_pos = (rm/2)*(x[0]-x[1])
+dt = 0.005
+sys_c = ct.ss(A, B, C, D)
+sys_d = ct.c2d(sys_c, dt)
+Ad = sys_d.A
+Bd = sys_d.B
+###Functions
+def x_y(x): #gets x y coordinates
+    x_pos = (rm / 2.0) * (x[0] + x[1])
+    y_pos = (rm / 2.0) * (x[0] - x[1])
+    return x_pos, y_pos
+def steering_input(x, move_to):
+    x_pos, y_pos = x_y(x)
     delta_x = move_to[0] - x_pos
     delta_y = move_to[1] - y_pos
 
-    vx = (rm/2)*(x[3]+x[4])
-    vy = (rm/2)*(x[3]-x[4])
+    # vx = (rm / 2.0) * (x[2] + x[3])
+    # vy = (rm / 2.0) * (x[2] - x[3])
     
-    U_L = k_h*delta_x + k_v*delta_y - k_d*vx - k_d*vy
-    U_R = k_h*delta_x + k_v*delta_y - k_d*vx + k_d*vy
-    return U_L,U_R
+    U_L = k_h * delta_x + k_v * delta_y
+    U_R = k_h * delta_x - k_v * delta_y
+    return U_L, U_R
+def move_without_printing(x, u, destination, allowed_error):
+    x_pos, y_pos = x_y(x)
+    while np.abs(destination[0] - x_pos) > allowed_error or np.abs(destination[1] - y_pos) > allowed_error:
+        u[0:2] = steering_input(x, destination)
+        x = Ad @ x + Bd @ u
+        x_pos, y_pos = x_y(x)
+    u[0:2] = 0.0  # Stop motors once arrived
+    return x
 
-###
+def new_spool(x, u, L_fc, new_color, reset_point): #gets new spool
 
-#initialize
-program = np.array([[2,1,0],[1,2,0],[1,1,1]])
+    return_point = x_y(x)
+    refill_x.append(return_point[0])
+    refill_y.append(return_point[1])
+    print("moving to reset point")
+
+    if L_fc > allowed_filament_rest: #if we need to get rid of filament
+        u[2] = U_H_on
+    else: #let it cool down already
+        u[2] = 0.0
+    x = move_without_printing(x, u, reset_point, allowed_error)
+    print("arrived at reset point")
+
+    while L_fc > allowed_filament_rest:
+        if x[8] >= min_T_4_print:
+            L_fc = L_fc - max_print_rate * dt
+        x = Ad @ x + Bd @ u
+    print("filament cleaned now")
+    u[2] = 0.0
+    while x[8] > max_T_4_rep:
+        x = Ad @ x + Bd @ u
+    print("nozzle sufficiently cool")
+    
+    ## give new spool
+    f_color = new_color
+    L_fc = L_nf #when a new spool is loaded the filament length resets to the full spool length.
+    print("new spool loaded, returning to previous point")
+    u[2] = U_H_on
+
+    ###move to reset return point
+    x = move_without_printing(x, u, return_point, allowed_error)
+    print("Arrived at saved return point")
+    return x, f_color, L_fc
+
+###initialize
+reset_point = (0,0)
+
 L_fc = 1.5 #how much filament we have now
 f_color = 0 #colour 0 is loaded
 L_nf = 1.5 #length of new filament that is loaded
-printing = 1
-allowed_error = 0.01 #meters when to switch to new target point
+
+x = np.zeros(9) #initialize
+Te = 298.15 #kelvin, outside temp, 25 celcius
+U_L_0 = 0 #left motor at start
+U_R_0 = 0
+U_H_0 = 0 #heater voltage at start
+U_H_on = 24 #volts
+u = np.array([U_L_0,U_R_0,U_H_0,Te])
+
+x[8] = Te
+
+##boundaries
+allowed_filament_rest = 0.01 #meters, one centimeter allowed left
+allowed_error = 0.005 #meters when to switch to new target point
+max_T_4_rep = 323.15 #kelvin benjamins
+min_T_4_print = 373.15
+max_print_rate = 0.01 #centimeters of filament per second
+
+##program x,y, color and whether to print on that section
+program = np.array([
+    [1, 1, 0, 0],
+    [2, 1, 0, 1],
+    [1, 2, 0, 1],
+    [1, 1, 1, 1]
+], dtype=float)
 
 
-for i in range(len(program)): #moves through all my steering inputs
-    target_point = (program[i,0],program[i,1])
-    if f_color == program[i,2]:
-        del_x = np.abs(target_point[0] - (rm/2)*(x[0]+x[1])) #distance to where it wants to be in x
-        del_y = np.abs(target_point[0] - (rm/2)*(x[0]-x[1])) #in y
-        while  del_x > allowed_error or  del_y > allowed_error:
+# program = np.array([
+#     # --- 1. House Base (Color 0 - Blue) ---
+#     [0.5, 0.5, 0, 0],  # Travel to bottom-left corner
+#     [1.5, 0.5, 0, 1],  # Print bottom wall
+#     [1.5, 1.5, 0, 1],  # Print right wall
+#     [0.5, 1.5, 0, 1],  # Print top wall (ceiling)
+#     [0.5, 0.5, 0, 1],  # Print left wall
+
+#     # --- 2. Door (Color 0 - Blue) ---
+#     [0.7, 0.5, 0, 0],  # Travel to door start
+#     [0.7, 1.0, 0, 1],  # Print left door frame
+#     [1.0, 1.0, 0, 1],  # Print top door frame
+#     [1.0, 0.5, 0, 1],  # Print right door frame
+
+#     # --- 3. Window (Color 2 - Green) ---
+#     [1.15, 1.05, 2, 0], # Travel to window bottom-left
+#     [1.35, 1.05, 2, 1], # Print window bottom
+#     [1.35, 1.25, 2, 1], # Print window right
+#     [1.15, 1.25, 2, 1], # Print window top
+#     [1.15, 1.05, 2, 1], # Print window left
+
+#     # --- 4. Pitched Roof + Chimney (Color 1 - Orange/Red) ---
+#     [0.4, 1.5, 1, 0],  # Travel to left roof overhang
+#     [1.0, 2.1, 1, 1],  # Print left roof slope
+#     [1.6, 1.5, 1, 1],  # Print right roof slope
+#     [0.4, 1.5, 1, 1],  # Print roof base
+
+#     # --- 5. Diamond Star/Sun in Sky (Color 3 - Red/Purple) ---
+#     [2.0, 1.8, 3, 0],  # Travel to sun bottom
+#     [2.2, 2.0, 3, 1],  # Print bottom-right ray
+#     [2.0, 2.2, 3, 1],  # Print top-right ray
+#     [1.8, 2.0, 3, 1],  # Print top-left ray
+#     [2.0, 1.8, 3, 1]   # Print bottom-left ray
+# ], dtype=float)
+
+###sim loop
+printed_x, printed_y, printed_c = [], [], []
+refill_x, refill_y = [], []
+
+
+###gains
+k_h = 10 #horizontal gain
+k_v = 10 #vertical gain
+k_d = 2 #derivative gain
+#
+
+for i in range(len(program)):
+    target_point = (program[i, 0], program[i, 1])
+    target_colour = int(program[i, 2])
+    printing = int(program[i, 3])
+    print("currently on segment",i,"target point and colour are",target_point,target_colour,"printing is set to",printing)
+    if printing == 0: #just moving
+        x = move_without_printing(x, u, target_point, allowed_error)
+        print("moved without printing to",target_point)
+    else: #printing here
+        if f_color != target_colour or L_fc <= allowed_filament_rest: #new spool needed
+            print("getting a new spool of filament")
+            x, f_color, L_fc = new_spool(x, u, L_fc, target_colour, reset_point)
+        u[2] = U_H_on
+        while x[8] < min_T_4_print:
+            u[0:2] = 0.0  # Wait to heat up
+            x = Ad @ x + Bd @ u
+        print("ready to print")
+        
+        x_pos, y_pos = x_y(x)
+        while np.abs(target_point[0] - x_pos) > allowed_error or np.abs(target_point[1] - y_pos) > allowed_error:
             
-    
-    
+            if L_fc <= allowed_filament_rest: #do we still have filament
+                print("ran out out filament whilst printing segment", i)
+                x, f_color, L_fc = new_spool(x, u, L_fc, target_colour, reset_point)
+            #now we are back at return point w a nozzle of unknown temp so
+            u[2] = U_H_on #should already be on
+            if x[8] < min_T_4_print:
+               u[0:2] = 0.0 #dont print and heat up
+               x = Ad @ x + Bd @ u
+            else:
+                u[0:2] = steering_input(x, target_point)
+                x = Ad @ x + Bd @ u
+                L_fc -= max_print_rate * dt #remove filament
+                printed_x.append(x_pos)
+                printed_y.append(y_pos)
+                printed_c.append(f_color)
+            x_pos, y_pos = x_y(x)
+    print("finished segment",i)
+print("finished all segments")
+
+plt.figure()
+plt.scatter(printed_x, printed_y, c=printed_c, cmap='tab10', s=2)
+plt.scatter(refill_x, refill_y, color='red', marker='x', s=100, label='Spool Refill')
+plt.xlabel('x [m]')
+plt.ylabel('y [m]')
+plt.title('Printed Filament')
+plt.legend()
+plt.axis('equal')
+plt.grid(True)
+plt.show()
