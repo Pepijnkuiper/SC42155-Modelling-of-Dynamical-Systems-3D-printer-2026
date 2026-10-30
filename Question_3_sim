@@ -158,41 +158,6 @@ program = np.array([
 ], dtype=float)
 
 
-# program = np.array([
-#     # --- 1. House Base (Color 0 - Blue) ---
-#     [0.5, 0.5, 0, 0],  # Travel to bottom-left corner
-#     [1.5, 0.5, 0, 1],  # Print bottom wall
-#     [1.5, 1.5, 0, 1],  # Print right wall
-#     [0.5, 1.5, 0, 1],  # Print top wall (ceiling)
-#     [0.5, 0.5, 0, 1],  # Print left wall
-
-#     # --- 2. Door (Color 0 - Blue) ---
-#     [0.7, 0.5, 0, 0],  # Travel to door start
-#     [0.7, 1.0, 0, 1],  # Print left door frame
-#     [1.0, 1.0, 0, 1],  # Print top door frame
-#     [1.0, 0.5, 0, 1],  # Print right door frame
-
-#     # --- 3. Window (Color 2 - Green) ---
-#     [1.15, 1.05, 2, 0], # Travel to window bottom-left
-#     [1.35, 1.05, 2, 1], # Print window bottom
-#     [1.35, 1.25, 2, 1], # Print window right
-#     [1.15, 1.25, 2, 1], # Print window top
-#     [1.15, 1.05, 2, 1], # Print window left
-
-#     # --- 4. Pitched Roof + Chimney (Color 1 - Orange/Red) ---
-#     [0.4, 1.5, 1, 0],  # Travel to left roof overhang
-#     [1.0, 2.1, 1, 1],  # Print left roof slope
-#     [1.6, 1.5, 1, 1],  # Print right roof slope
-#     [0.4, 1.5, 1, 1],  # Print roof base
-
-#     # --- 5. Diamond Star/Sun in Sky (Color 3 - Red/Purple) ---
-#     [2.0, 1.8, 3, 0],  # Travel to sun bottom
-#     [2.2, 2.0, 3, 1],  # Print bottom-right ray
-#     [2.0, 2.2, 3, 1],  # Print top-right ray
-#     [1.8, 2.0, 3, 1],  # Print top-left ray
-#     [2.0, 1.8, 3, 1]   # Print bottom-left ray
-# ], dtype=float)
-
 ###sim loop
 printed_x, printed_y, printed_c = [], [], []
 refill_x, refill_y = [], []
