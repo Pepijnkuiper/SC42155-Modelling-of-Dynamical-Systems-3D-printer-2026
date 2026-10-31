@@ -82,7 +82,7 @@ def theta_to_xy(th1, th2):
 #this controller yielded huge overshoots. need to slow down as car approach setpoint
 #but also not exceed the amplitude of drive voltage.
 
-kd = 0.2 #currently this gain does not result in an override for the square.
+kd = 0.1 #currently this gain does not result in an override for the square.
 kv = 0.0 #set to zero, dampeners in system were enough anyway and this destroys the shape somehow if large.
 def steering_command(x, th1_des, th2_des, V):
     delta_thL = th1_des - x[0]
@@ -141,22 +141,22 @@ program_xy = np.array([
 
 
 #writes out ANY
-# program_xy = np.array([
-#     [1,1,0,0], #
-#     [2,3,0,1],
-#     [3,1,0,1],
-#     [1.5,2,0,0],
-#     [2.5,2,1,1],
-#     [3,1,0,0],
-#     [3,3,0,1],
-#     [4,1,0,1],
-#     [4,3,0,1],
-#     [4.5,2,1,1],
-#     [5,3,1,1],
-#     [4.5,2,1,0],
-#     [4.5,1,2,1]
+program_xy = np.array([
+    [1,1,0,0], #
+    [2,3,0,1],
+    [3,1,0,1],
+    [1.5,2,0,0],
+    [2.5,2,1,1],
+    [3,1,0,0],
+    [3,3,0,1],
+    [4,1,0,1],
+    [4,3,0,1],
+    [4.5,2,1,1],
+    [5,3,1,1],
+    [4.5,2,1,0],
+    [4.5,1,2,1]
     
-# ], dtype=float)
+], dtype=float)
 
 
 ###initialize
@@ -255,7 +255,7 @@ while mode != 8: #while not finished
                 mode = 4 #empying
                 print("mode switched to", mode)
             else:
-                mode = 6 #D
+                mode = 5 #
                 print("mode switched to", mode)
                 #reload
                 
