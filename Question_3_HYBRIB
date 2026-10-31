@@ -1,0 +1,350 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Oct 30 13:40:54 2026
+
+@author: pepij
+"""
+
+import numpy as np
+import control as ct
+import matplotlib.pyplot as plt
+#physical
+rm = 0.01 #[m]
+mu_x = 0.01 
+mu_y = 0.01
+mu_r = 0.01
+J = 0.00001 #[ kg* m^2]
+Rm = 10 # [Ohm]
+L_m = 0.05  # [kg⋅m^2⋅s^−2⋅A^−2]
+Kr = 0.1 # [torque/A]
+m = 0.250 # [kg] 
+b1 = 2*mu_x + 8*mu_r #9
+b2 = 2*mu_y + 4*mu_r #5
+c = m * rm**2 + 2 * J
+U_drive  =12#v
+
+
+#heater elements
+Ln = 0.05#inductor of the heater
+Rn = 1#[Ohm] resistor of heater
+Cn = 0.05#[] capacitor of the resistor
+Ct_n = 8# heat capacitace of heater
+Rt_n = 8# heat resistance
+
+###state space for movement
+
+A = np.array([
+    [0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0],
+    [0, 0, -0.5 * rm**2 * (b1 + b2) / c, -0.5 * rm**2 * (b1 - b2) / c, 2 * Kr / c,0],
+    [0, 0, -0.5 * rm**2 * (b1 - b2) / c, -0.5 * rm**2 * (b1 + b2) / c, 0, 2 * Kr / c],
+    [0, 0, -Kr / L_m, 0, -Rm / L_m, 0],
+    [0, 0, 0, -Kr / L_m, 0, -Rm / L_m]], dtype=float)
+
+B = np.array([
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [1 / L_m, 0],
+    [0, 1 / L_m]
+], dtype=float)
+
+C = np.eye(6)
+D = np.zeros((6, 2))
+dt = 0.005
+sys_c = ct.ss(A, B, C, D)
+sys_d = ct.c2d(sys_c, dt)
+Ad = sys_d.A
+Bd = sys_d.B
+#x = Ad @ x + Bd @ u
+
+#Q=1 = 
+
+### help funcitons
+def xy_to_theta(x_pos, y_pos):
+    th1 = (x_pos + y_pos) / rm
+    th2 = (x_pos - y_pos) / rm
+    return th1, th2
+
+def theta_to_xy(th1, th2):
+    return (rm / 2.0) * (th1 + th2), (rm / 2.0) * (th1 - th2)
+
+# def steering_command(x, th1_des, th2_des, V):
+#     delta_thL = th1_des - x[0]
+#     delta_thR = th2_des - x[1]
+#     norm = np.hypot(delta_thL, delta_thR)
+#     if norm < 0.0001:
+#         return 0.0, 0.0
+#     u_L = V * (delta_thL / norm)
+#     u_R = V * (delta_thR / norm)
+#     return u_L, u_R
+#this controller yielded huge overshoots. need to slow down as car approach setpoint
+#but also not exceed the amplitude of drive voltage.
+
+kd = 0.2 #currently this gain does not result in an override for the square.
+kv = 0.0 #set to zero, dampeners in system were enough anyway and this destroys the shape somehow if large.
+def steering_command(x, th1_des, th2_des, V):
+    delta_thL = th1_des - x[0]
+    delta_thR = th2_des - x[1]
+    
+    u_L = delta_thL *kd   - kv *x[2]
+    u_R = delta_thR *kd- kv * x[3]
+    SV = np.array([u_L,u_R]) #Steering voltages
+    
+    
+    TV = np.linalg.norm(SV) #Total steering voltage
+    if  TV > V:
+        u_L = (u_L*V)/TV
+        u_R = (u_R*V)/TV #scaling steering voltage to conserve shape
+        print("voltage override was necessary BC drive voltage was",TV)
+    return u_L, u_R
+
+
+
+def f(x, u):
+    x_dot = np.zeros(9)
+    x_dot[0:6] = A @ x[0:6] + B @ u[0:2]
+    x_dot[6] = (u[2] - x[7]) / Ln
+    x_dot[7] = (x[6] * Rn - x[7]) / (Cn * Rn)
+    x_dot[8] = ((x[7]**2 / Rn) - ((x[8] - u[3]) / Rt_n)) / Ct_n
+    return x_dot
+
+#automaton states
+#travel = 0 #moving without printing to target point
+#heat = 1 #waiting to heat up without moving
+#print = 2 #printing while moving to target point
+#move to reset = 3 #moving to reset point
+#emptying = 4 #emptying rest of filament
+#cooling = 5 #cooling down without moving
+#reload = 6 # reloading filament
+#return = 7 # returning to previous print location
+#finished = 8 # done with program
+#other parameters
+T_env = 298.15 #kelvin benjamijns
+min_T_print = 373.15#kevin austins
+max_T_rep = 323.15#kelvins
+U_H_on = 24.0#heater voltage when on
+max_print_rate = 0.03 
+allowed_filament_rest = 0.02
+allowed_theta_error = 0.1  # Sensor guard threshold [rad]
+DRIVE_VOLTAGE = 12.0        # Constant voltage magnitude
+
+#program [x, y, color, 1 = print 0 = not print]
+program_xy = np.array([
+    [0.05, 0.05, 0, 0], #BL corner
+    [0.15, 0.05, 0, 1],#TL corner
+    [0.15, 0.15, 1, 1],#TR corner also switch color here
+    [0.05, 0.15, 1, 1],#BR corner
+    [0.05, 0.05, 1, 1]  #BL corner
+], dtype=float)
+
+
+#writes out ANY
+# program_xy = np.array([
+#     [1,1,0,0], #
+#     [2,3,0,1],
+#     [3,1,0,1],
+#     [1.5,2,0,0],
+#     [2.5,2,1,1],
+#     [3,1,0,0],
+#     [3,3,0,1],
+#     [4,1,0,1],
+#     [4,3,0,1],
+#     [4.5,2,1,1],
+#     [5,3,1,1],
+#     [4.5,2,1,0],
+#     [4.5,1,2,1]
+    
+# ], dtype=float)
+
+
+###initialize
+reset_point_th = (0,0)
+x = np.zeros(9)
+L_fc = 1.5 #how much filament we have now
+f_color = 0 #colour 0 is loaded
+L_nf = 1.5 #length of new filament that is loaded
+mode = 0 #Travel
+print("mode is",mode)
+x[8] = T_env
+
+u = np.array([0.0, 0.0, 0.0, T_env])
+printed_x, printed_y, printed_c = [], [], []
+refill_x, refill_y = [], []
+segment_id = 0 #which segment are we working on now
+saved_point = (0,0)
+
+###
+while mode != 8: #while not finished
+    th1_des,th2_des = xy_to_theta(program_xy[segment_id,0],program_xy[segment_id,1])
+    #desired motor angles from program for segment
+    target_color = int(program_xy[segment_id,2])
+    
+    dist_target = np.hypot(th1_des - x[0], th2_des - x[1])
+    dist_reset  = np.hypot(reset_point_th[0] - x[0], reset_point_th[1] - x[1])
+    dist_return = np.hypot(saved_point[0] - x[0], saved_point[1] - x[1])
+    
+    if mode == 0: #travel
+        if dist_target <= allowed_theta_error:
+            segment_id += 1
+            if segment_id >= len(program_xy):
+                mode = 8 #finished
+                print("mode switched to", mode)
+                break
+            next_segment_color = int(program_xy[segment_id, 2])
+            next_segment_print = int(program_xy[segment_id, 3])
+            if next_segment_print == 0:
+                mode = 0 #travel
+                print("mode switched to", mode)
+            elif f_color != next_segment_color or L_fc <= allowed_filament_rest:
+                saved_point = (x[0], x[1])
+                rx, ry = theta_to_xy(x[0], x[1])
+                refill_x.append(rx)
+                refill_y.append(ry)
+                mode = 3 #to reset point
+                print("mode switched to", mode)
+            elif x[8] < min_T_print:
+                mode = 1 #heat
+                print("mode switched to", mode)
+            else:
+                mode = 2 #print
+                print("mode switched to", mode)
+                
+    #### Heating mode
+    elif mode == 1: #heat
+        if x[8] >= min_T_print:
+            mode = 2#print
+            print("mode switched to", mode)
+    ##printing mode
+    elif mode == 2: #print
+        if f_color != target_color or L_fc <= allowed_filament_rest:
+            saved_point = (x[0], x[1])
+            rx, ry = theta_to_xy(x[0], x[1])
+            refill_x.append(rx)
+            refill_y.append(ry)
+            mode = 3 # move to the reset point
+            print("mode switched to", mode)
+        elif x[8] < min_T_print:
+            mode = 1 #heat
+            print("mode switched to", mode)
+        elif dist_target <= allowed_theta_error:
+            segment_id = segment_id+1
+            if segment_id >= len(program_xy):
+                mode = 8 #finished
+                print("mode switched to", mode)
+                break
+            
+            next_color = int(program_xy[segment_id, 2])
+            next_print = int(program_xy[segment_id, 3])
+            if next_print == 0:
+                mode = 0 #travel
+                print("mode switched to", mode)
+            elif f_color != next_color or L_fc <= allowed_filament_rest:
+                saved_point = (x[0], x[1])
+                rx, ry = theta_to_xy(x[0], x[1])
+                refill_x.append(rx)
+                refill_y.append(ry)
+                mode = 3 #to reset
+                print("mode switched to", mode)
+    
+    #moving to the reset point
+    elif mode == 3: #to reset
+        if dist_reset <= allowed_theta_error:
+            if L_fc > allowed_filament_rest:
+                mode = 4 #empying
+                print("mode switched to", mode)
+            else:
+                mode = 6 #D
+                print("mode switched to", mode)
+                #reload
+                
+    #emptying at the reset point
+    elif mode == 4:#emptying
+        if L_fc <= allowed_filament_rest:
+            mode = 5 #cool
+            print("mode switched to", mode)
+   
+    #Cooling, w/o movement only occur at the reset point
+    elif mode == 5: #cooling w/o movement
+        if x[8] <= max_T_rep:
+            mode = 6
+            print("mode switched to", mode)
+    
+    #instantly reload at the reset point
+    elif mode == 6: #reload
+        f_color = target_color #grabs target color for current segment id and loads it
+        L_fc = L_nf
+        mode = 7 #return
+        print("mode switched to", mode)
+        
+    #return to the saved return point
+    elif mode == 7: #return
+        if dist_return <= allowed_theta_error:
+            if x[8] < min_T_print:
+                mode = 1#heat
+                print("mode switched to", mode)
+            else:
+                mode = 2 #print
+                print("mode switched to", mode)
+            #mode heat =1
+    th1_des, th2_des = xy_to_theta(program_xy[segment_id, 0], program_xy[segment_id, 1])
+    target_color = int(program_xy[segment_id, 2])
+#dynamics and inputs per mode etc
+    if mode == 0: #travel
+        u[0:2] = steering_command(x, th1_des, th2_des, DRIVE_VOLTAGE)
+        u[2] = 0.0
+
+    elif mode == 1: #heat
+        u[0:2] = [0.0, 0.0]
+        u[2] = U_H_on
+        #heat maybe already be on
+
+    elif mode == 2: #print
+        u[0:2] = steering_command(x, th1_des, th2_des, DRIVE_VOLTAGE)
+        u[2] = U_H_on
+        L_fc -= max_print_rate * dt
+        px, py = theta_to_xy(x[0], x[1])#save where printing was done
+        printed_x.append(px)
+        printed_y.append(py)
+        printed_c.append(f_color) #fills the array with the points of where printing was done
+
+    elif mode == 3: #to reset point
+        u[0:2] = steering_command(x, reset_point_th[0], reset_point_th[1], DRIVE_VOLTAGE)
+        if L_fc > allowed_filament_rest:
+            u[2] = U_H_on #logic to save energy and time, not really within scope here.
+        else:
+            u[2] = 0
+    elif mode == 4:#empyting
+        u[0:2] = [0.0, 0.0] #turns off the movement voltages
+        u[2] = U_H_on #heater on
+        if x[8] >= min_T_print:
+            L_fc -= max_print_rate * dt
+
+    elif mode == 5: #Cooling W/O moving
+        u[0:2] = [0.0, 0.0] #setting drive volages to zero again
+        u[2] = 0.0 #turn off heater
+
+    elif mode == 6: #reload
+        u[0:2] = [0.0, 0.0] #voltages here are already zero but this does not matter
+        u[2] = 0.0 #heater is also already off before this
+        
+    elif mode == 7: #return
+        u[0:2] = steering_command(x, saved_point[0], saved_point[1], DRIVE_VOLTAGE)
+        u[2] = U_H_on #put the heater on to save time
+    #do the update now
+    x_dot = f(x, u)
+    x = x+ x_dot *dt
+    #new state is calculated for the loop to run again.
+# Plot
+plt.figure()
+plt.scatter(printed_x, printed_y, c=printed_c, cmap='tab10', s=4)
+plt.scatter(refill_x, refill_y, color='red', marker='x', s=100, label='Spool Refill Locations')
+plt.xlabel('x [m]')
+plt.ylabel('y [m]')
+plt.title('Printed Filament (Hybrid Automaton)')
+plt.legend()
+plt.axis('equal')
+plt.grid(True)
+plt.show()
+print("done123")
