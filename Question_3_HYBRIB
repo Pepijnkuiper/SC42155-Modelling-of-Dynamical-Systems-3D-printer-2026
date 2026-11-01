@@ -82,7 +82,7 @@ def theta_to_xy(th1, th2):
 #this controller yielded huge overshoots. need to slow down as car approach setpoint
 #but also not exceed the amplitude of drive voltage.
 
-kd = 0.1 #currently this gain does not result in an override for the square.
+kd = 0.1 #currently this gain does result in a voltage override for the square.
 kv = 0.0 #set to zero, dampeners in system were enough anyway and this destroys the shape somehow if large.
 def steering_command(x, th1_des, th2_des, V):
     delta_thL = th1_des - x[0]
@@ -125,38 +125,38 @@ T_env = 298.15 #kelvin benjamijns
 min_T_print = 373.15#kevin austins
 max_T_rep = 323.15#kelvins
 U_H_on = 24.0#heater voltage when on
-max_print_rate = 0.03 
+max_print_rate = 0.1 
 allowed_filament_rest = 0.02
 allowed_theta_error = 0.1  # Sensor guard threshold [rad]
 DRIVE_VOLTAGE = 12.0        # Constant voltage magnitude
 
 #program [x, y, color, 1 = print 0 = not print]
 program_xy = np.array([
-    [0.05, 0.05, 0, 0], #BL corner
-    [0.15, 0.05, 0, 1],#TL corner
-    [0.15, 0.15, 1, 1],#TR corner also switch color here
-    [0.05, 0.15, 1, 1],#BR corner
-    [0.05, 0.05, 1, 1]  #BL corner
+    [1, 1, 0, 0], #BL corner
+    [1, 2, 0, 1],#TL corner
+    [2, 2, 1, 1],#TR corner also switch color here
+    [2, 1, 1, 1],#BR corner
+    [1, 1, 1, 1]  #BL corner
 ], dtype=float)
 
 
 #writes out ANY
-program_xy = np.array([
-    [1,1,0,0], #
-    [2,3,0,1],
-    [3,1,0,1],
-    [1.5,2,0,0],
-    [2.5,2,1,1],
-    [3,1,0,0],
-    [3,3,0,1],
-    [4,1,0,1],
-    [4,3,0,1],
-    [4.5,2,1,1],
-    [5,3,1,1],
-    [4.5,2,1,0],
-    [4.5,1,2,1]
+# program_xy = np.array([
+#     [1,1,0,0], #
+#     [2,3,0,1],
+#     [3,1,0,1],
+#     [1.5,2,0,0],
+#     [2.5,2,1,1],
+#     [3,1,0,0],
+#     [3,3,0,1],
+#     [4,1,0,1],
+#     [4,3,0,1],
+#     [4.5,2,1,1],
+#     [5,3,1,1],
+#     [4.5,2,1,0],
+#     [4.5,1,2,1]
     
-], dtype=float)
+# ], dtype=float)
 
 
 ###initialize
