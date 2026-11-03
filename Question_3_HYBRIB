@@ -82,7 +82,7 @@ def theta_to_xy(th1, th2):
 #this controller yielded huge overshoots. need to slow down as car approach setpoint
 #but also not exceed the amplitude of drive voltage.
 
-kd = 0.1 #currently this gain does result in a voltage override for the square.
+kd = 0.1 #currently this gain does not result in an override for the square.
 kv = 0.0 #set to zero, dampeners in system were enough anyway and this destroys the shape somehow if large.
 def steering_command(x, th1_des, th2_des, V):
     delta_thL = th1_des - x[0]
@@ -165,16 +165,25 @@ x = np.zeros(9)
 L_fc = 1.5 #how much filament we have now
 f_color = 0 #colour 0 is loaded
 L_nf = 1.5 #length of new filament that is loaded
-mode = 0 #Travel
-print("mode is",mode)
+
+
 x[8] = T_env
 
 u = np.array([0.0, 0.0, 0.0, T_env])
 printed_x, printed_y, printed_c = [], [], []
 refill_x, refill_y = [], []
+mode_history = []
+mode_times = []
 segment_id = 0 #which segment are we working on now
 saved_point = (0,0)
 
+
+time_elapsed = 0.0
+mode = 0 #Travel
+mode_history.append(mode)
+mode_times.append(time_elapsed)
+
+print("mode is",mode)
 ###
 while mode != 8: #while not finished
     th1_des,th2_des = xy_to_theta(program_xy[segment_id,0],program_xy[segment_id,1])
@@ -191,12 +200,16 @@ while mode != 8: #while not finished
             if segment_id >= len(program_xy):
                 mode = 8 #finished
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
                 break
             next_segment_color = int(program_xy[segment_id, 2])
             next_segment_print = int(program_xy[segment_id, 3])
             if next_segment_print == 0:
                 mode = 0 #travel
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             elif f_color != next_segment_color or L_fc <= allowed_filament_rest:
                 saved_point = (x[0], x[1])
                 rx, ry = theta_to_xy(x[0], x[1])
@@ -204,18 +217,26 @@ while mode != 8: #while not finished
                 refill_y.append(ry)
                 mode = 3 #to reset point
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             elif x[8] < min_T_print:
                 mode = 1 #heat
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             else:
                 mode = 2 #print
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
                 
     #### Heating mode
     elif mode == 1: #heat
         if x[8] >= min_T_print:
             mode = 2#print
             print("mode switched to", mode)
+            mode_history.append(mode)
+            mode_times.append(time_elapsed)
     ##printing mode
     elif mode == 2: #print
         if f_color != target_color or L_fc <= allowed_filament_rest:
@@ -225,14 +246,20 @@ while mode != 8: #while not finished
             refill_y.append(ry)
             mode = 3 # move to the reset point
             print("mode switched to", mode)
+            mode_history.append(mode)
+            mode_times.append(time_elapsed)
         elif x[8] < min_T_print:
             mode = 1 #heat
             print("mode switched to", mode)
+            mode_history.append(mode)
+            mode_times.append(time_elapsed)
         elif dist_target <= allowed_theta_error:
             segment_id = segment_id+1
             if segment_id >= len(program_xy):
                 mode = 8 #finished
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
                 break
             
             next_color = int(program_xy[segment_id, 2])
@@ -240,6 +267,8 @@ while mode != 8: #while not finished
             if next_print == 0:
                 mode = 0 #travel
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             elif f_color != next_color or L_fc <= allowed_filament_rest:
                 saved_point = (x[0], x[1])
                 rx, ry = theta_to_xy(x[0], x[1])
@@ -247,6 +276,8 @@ while mode != 8: #while not finished
                 refill_y.append(ry)
                 mode = 3 #to reset
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
     
     #moving to the reset point
     elif mode == 3: #to reset
@@ -254,9 +285,13 @@ while mode != 8: #while not finished
             if L_fc > allowed_filament_rest:
                 mode = 4 #empying
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             else:
                 mode = 5 #
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
                 #reload
                 
     #emptying at the reset point
@@ -264,12 +299,16 @@ while mode != 8: #while not finished
         if L_fc <= allowed_filament_rest:
             mode = 5 #cool
             print("mode switched to", mode)
+            mode_history.append(mode)
+            mode_times.append(time_elapsed)
    
     #Cooling, w/o movement only occur at the reset point
     elif mode == 5: #cooling w/o movement
         if x[8] <= max_T_rep:
             mode = 6
             print("mode switched to", mode)
+            mode_history.append(mode)
+            mode_times.append(time_elapsed)
     
     #instantly reload at the reset point
     elif mode == 6: #reload
@@ -277,6 +316,8 @@ while mode != 8: #while not finished
         L_fc = L_nf
         mode = 7 #return
         print("mode switched to", mode)
+        mode_history.append(mode)
+        mode_times.append(time_elapsed)
         
     #return to the saved return point
     elif mode == 7: #return
@@ -284,9 +325,13 @@ while mode != 8: #while not finished
             if x[8] < min_T_print:
                 mode = 1#heat
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             else:
                 mode = 2 #print
                 print("mode switched to", mode)
+                mode_history.append(mode)
+                mode_times.append(time_elapsed)
             #mode heat =1
     th1_des, th2_des = xy_to_theta(program_xy[segment_id, 0], program_xy[segment_id, 1])
     target_color = int(program_xy[segment_id, 2])
@@ -335,6 +380,7 @@ while mode != 8: #while not finished
     #do the update now
     x_dot = f(x, u)
     x = x+ x_dot *dt
+    time_elapsed = time_elapsed + dt
     #new state is calculated for the loop to run again.
 # Plot
 plt.figure()
@@ -348,3 +394,11 @@ plt.axis('equal')
 plt.grid(True)
 plt.show()
 print("done123")
+
+plt.figure()
+plt.step(mode_times, mode_history)
+plt.xlabel('Time elapsed [s]')
+plt.ylabel('Mode [-]')
+plt.title('Mode vs Time')
+plt.grid(True)
+plt.show()
